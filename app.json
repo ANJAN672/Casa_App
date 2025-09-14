@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Casa",
+    "slug": "casa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "casa",
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "backgroundColor": "#000000"
+    },
+    "extra": {}
+  }
+}
