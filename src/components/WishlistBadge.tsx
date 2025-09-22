@@ -13,7 +13,7 @@ export function WishlistBadge() {
   };
 
   return (
-    <Pressable onPress={handlePress} style={[styles.container, { top: (insets.top || 12) + 48 }]}>
+    <Pressable onPress={handlePress} style={[styles.container, { top: (insets.top || 12) + 8 }]}>
       <Text style={styles.icon}>♡</Text>
       {items.length > 0 && (
         <View style={styles.badge}>

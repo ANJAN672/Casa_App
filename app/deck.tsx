@@ -15,7 +15,7 @@ import {
   Text,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 
 import { useCartStore } from '../src/state/cart'
@@ -55,6 +55,13 @@ export default function Deck() {
   const [loading, setLoading] = useState(true)
   const [showProductDetail, setShowProductDetail] = useState(false)
   const [lastAction, setLastAction] = useState<LastAction>(null)
+  const [showFilter, setShowFilter] = useState(false)
+
+  // Safe area and top-right counts
+  const insets = useSafeAreaInsets()
+  const wishlistItems = useWishlistStore((s) => s.items)
+  const getCartTotal = useCartStore((s) => s.getTotalItems)
+  const cartCount = getCartTotal()
 
   // Animations
   const position = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current
@@ -83,6 +90,12 @@ export default function Deck() {
   const nopeOpacity = position.x.interpolate({
     inputRange: [-SCREEN_WIDTH / 4, 0],
     outputRange: [1, 0],
+    extrapolate: 'clamp',
+  })
+  // Hint becomes more visible as user drags upward (position.y is negative when moving up)
+  const upHintOpacity = position.y.interpolate({
+    inputRange: [-140, -60, 0],
+    outputRange: [1, 0.5, 0],
     extrapolate: 'clamp',
   })
 
@@ -146,10 +159,11 @@ export default function Deck() {
     onPanResponderMove: (_evt, { dx, dy }) => {
       if (isAnimating || currentIndex >= items.length) return
       requestAnimationFrame(() => {
-        // Enforce horizontal-only visual movement to avoid awkward diagonal "fly"
-        // (still read dy on release for swipe-up detection)
-        position.setValue({ x: dx, y: 0 })
-        const scaleValue = 1 + (Math.abs(dx) / SCREEN_WIDTH) * 0.03
+        // Allow smooth upward drag (only negative Y), keep horizontal for left/right
+        const newY = dy < 0 ? dy : 0
+        position.setValue({ x: dx, y: newY })
+        const displacement = Math.max(Math.abs(dx) / SCREEN_WIDTH, Math.min(Math.abs(newY) / SCREEN_HEIGHT, 1))
+        const scaleValue = 1 + displacement * 0.03
         scale.setValue(Math.min(scaleValue, 1.08))
       })
     },
@@ -307,7 +321,13 @@ export default function Deck() {
           <Text style={styles.prefsText}>⚙︎ Prefs</Text>
         </Pressable>
         {lastAction && (
-          <Pressable onPress={undoLastAction} style={styles.undoButton}>
+          <Pressable
+            onPress={undoLastAction}
+            style={[
+              styles.undoButton,
+              { top: (insets.top || 12) + 8 + 48 + 10 } // place below Profile (48px) with 10px gap
+            ]}
+          >
             <Text style={styles.undoText}>↶ Undo</Text>
           </Pressable>
         )}
@@ -331,7 +351,7 @@ export default function Deck() {
           style={[
             styles.card,
             styles.currentCard,
-            { transform: [{ translateX: position.x }, { translateY: position.y.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 0, 0] }) }, { rotate }, { scale }], opacity },
+            { transform: [{ translateX: position.x }, { translateY: position.y }, { rotate }, { scale }], opacity },
             ]}
             {...panResponder.panHandlers}
         >
@@ -351,8 +371,14 @@ export default function Deck() {
               <Text style={styles.likeText}>LOVE</Text>
             </Animated.View>
 
-            <Animated.View style={[styles.choiceOverlay, styles.dislikeOverlay, { opacity: nopeOpacity }]}>
+            <Animated.View style={[styles.choiceOverlay, styles.dislikeOverlay, { opacity: nopeOpacity }]}> 
               <Text style={styles.dislikeText}>PASS</Text>
+            </Animated.View>
+
+            {/* Upward hint for Add to Cart */}
+            <Animated.View pointerEvents="none" style={[styles.upHint, { opacity: upHintOpacity }]}>
+              <Text style={styles.upHintArrow}>↑</Text>
+              <Text style={styles.upHintText}>Add to cart</Text>
             </Animated.View>
 
             <View style={styles.cardOverlay}>
@@ -374,32 +400,73 @@ export default function Deck() {
         </Animated.View>
       </View>
 
-      <View style={styles.actionButtons}>
-        <Pressable onPress={() => onDecision('dislike')} style={[styles.actionButton, styles.dislikeButton]}>
-          <Text style={styles.actionButtonText}>✕</Text>
+      {/* Top controls overlay (Filters only to avoid overlapping header buttons) */}
+      <View pointerEvents="box-none" style={styles.topOverlay}>
+        <Pressable onPress={() => setShowFilter(true)} style={styles.filterPill}>
+          <Text style={styles.filterPillText}>Filters</Text>
         </Pressable>
-        <Pressable onPress={() => onDecision('cart')} style={[styles.actionButton, styles.cartButton]}>
-          <Text style={styles.actionButtonText}>🛒</Text>
+      </View>
+
+      {/* Wishlist beside Prefs (top-left) */}
+      <View style={[styles.wishlistNearPrefs, { marginTop: (insets.top || 0) }]} pointerEvents="box-none">
+        <Pressable onPress={() => router.push('/wishlist')} style={styles.smallTopBadge}>
+          <Text style={styles.smallTopIcon}>♡</Text>
+          <Text style={styles.smallTopText}>{wishlistItems.length}</Text>
         </Pressable>
-        <Pressable onPress={() => onDecision('like')} style={[styles.actionButton, styles.likeButton]}>
-          <Text style={styles.actionButtonText}>♡</Text>
+      </View>
+
+      {/* Cart moved down to avoid overlapping header buttons */}
+      <View style={[styles.cartFloating, { bottom: 110 + (insets.bottom || 0) }]} pointerEvents="box-none">
+        <Pressable onPress={() => router.push('/cart')} style={styles.smallTopBadge}>
+          <Text style={styles.smallTopIcon}>🛒</Text>
+          <Text style={styles.smallTopText}>{cartCount}</Text>
         </Pressable>
       </View>
 
       <View style={styles.instructions}>
         <Text style={styles.instructionText}>
-          {Platform.OS === 'android'
-            ? 'Swipe the card or use buttons below'
-            : 'Swipe right to love • Swipe left to pass • Swipe up to add to cart'}
+          Swipe right to love • Swipe left to pass • Swipe up to add to cart
         </Text>
         <Text style={styles.progressText}>
           {currentIndex + 1} of {items.length} • {items.length - currentIndex - 1} remaining
         </Text>
       </View>
 
-      <CartBadge />
-      <WishlistBadge />
       <ProfileBadge />
+
+      {/* Lightweight Filters Modal */}
+      {showFilter && (
+        <Modal animationType="slide" transparent visible={showFilter} onRequestClose={() => setShowFilter(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Filters</Text>
+                <Pressable onPress={() => setShowFilter(false)}>
+                  <Text style={styles.modalClose}>Done</Text>
+                </Pressable>
+              </View>
+              <View style={{ padding: 20 }}>
+                <Text style={{ fontSize: 16, marginBottom: 12 }}>Price</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                  {['$', '$$', '$$$'].map((p) => (
+                    <View key={p} style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f5f5f5', borderRadius: 20 }}>
+                      <Text>{p}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={{ fontSize: 16, marginBottom: 12 }}>Tags</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {['casual', 'formal', 'denim', 'street', 'summer', 'winter'].map((t) => (
+                    <View key={t} style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f5f5f5', borderRadius: 20 }}>
+                      <Text>#{t}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {showProductDetail && currentIndex < items.length && (
         <Modal animationType="slide" transparent visible={showProductDetail} onRequestClose={() => setShowProductDetail(false)}>
@@ -513,6 +580,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 20,
     paddingHorizontal: 20,
+    paddingTop: Platform.select({ ios: 20, android: 10 }),
   },
   headerTitle: {
     fontSize: 28,
@@ -539,6 +607,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    zIndex: 26,
   },
   prefsText: {
     color: '#333333',
@@ -672,6 +741,30 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2,
   },
+  // Upward hint styles (centered near bottom of image)
+  upHint: {
+    position: 'absolute',
+    bottom: '34%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upHintArrow: {
+    fontSize: 28,
+    color: 'rgba(0,0,0,0.6)',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  upHintText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
   instructions: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -735,42 +828,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionButtons: {
+  // Top overlay controls
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingTop: Platform.select({ ios: 8, android: 4 }),
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingVertical: 20,
-    gap: 20,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    zIndex: 20,
   },
-  actionButton: {
-    width: Platform.OS === 'android' ? 65 : 60,
-    height: Platform.OS === 'android' ? 65 : 60,
-    borderRadius: Platform.OS === 'android' ? 32.5 : 30,
-    justifyContent: 'center',
-    alignItems: 'center',
+  filterPill: {
+    marginTop: 6,
+    marginLeft: 4,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  dislikeButton: {
-    backgroundColor: '#FF6B6B',
-  },
-  cartButton: {
-    backgroundColor: '#4ECDC4',
-  },
-  likeButton: {
-    backgroundColor: '#FF8A80',
-  },
-  actionButtonText: {
-    fontSize: 24,
+  filterPillText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#333',
+  },
+  topRightControls: {
+    display: 'none',
+  },
+  smallTopBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  smallTopIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  smallTopText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+  },
+  wishlistNearPrefs: {
+    position: 'absolute',
+    top: 10,
+    left: 90, // ensure a visible gap from Prefs
+    zIndex: 25,
+  },
+  cartFloating: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 25,
   },
   undoButton: {
     position: 'absolute',
@@ -785,6 +909,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+    zIndex: 30,
   },
   undoText: {
     color: '#ffffff',

@@ -9,13 +9,20 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "backgroundColor": "#000000"
+      "backgroundColor": "#000000",
+      "package": "com.anjan_46.casa"
     },
-    "extra": {}
+    "extra": {
+      "eas": {
+        "projectId": "6e689fa4-06f0-45d8-87e3-49563c8716ef"
+      }
+    }
   }
 }
